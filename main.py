@@ -261,4 +261,4 @@ async def chat(payload: Dict):
         user_message=payload["message"],
     )
 
-    return {"answer": answer}
+    return {"answer": answer} 
