@@ -207,7 +207,6 @@ async function sendMessage() {
 # ============================================================
 # SETUP ENDPOINT
 # ============================================================
-
 @app.post("/api/setup")
 async def setup(
     company: str = Form(...),
@@ -216,24 +215,16 @@ async def setup(
     summary: str = Form(...),
     files: List[UploadFile] = File(...)
 ):
-    # Create a unique session
-    session_id = str(uuid.uuid4())
-    store_display_name = f"demo-{session_id[:8]}"
-
-    # Create the File Search store
     try:
+        session_id = str(uuid.uuid4())
+        store_display_name = f"demo-{session_id[:8]}"
+
         store_id = create_file_search_store(store_display_name)
-    except Exception as e:
-        return JSONResponse({"error": f"Failed to create store: {str(e)}"}, status_code=500)
 
-    # Upload & attach each document
-    for f in files:
-        try:
+        for f in files:
             upload_and_attach_file(store_id, f)
-        except Exception as e:
-            return JSONResponse({"error": f"Upload failed: {str(e)}"}, status_code=500)
 
-    system_prompt = f"""
+        system_prompt = f"""
 You are an AI assistant helping {recipient} from {company}.
 Persona: {persona}
 
@@ -241,14 +232,17 @@ Page summary:
 {summary}
 """
 
-    # Save in memory
-    SESSIONS[session_id] = {
-        "store_id": store_id,
-        "system_prompt": system_prompt
-    }
+        SESSIONS[session_id] = {
+            "store_id": store_id,
+            "system_prompt": system_prompt
+        }
 
-    return {"session_id": session_id}
+        return {"session_id": session_id}
 
+    except Exception as e:
+        import traceback
+        err = traceback.format_exc()
+        return JSONResponse({"error": str(e), "trace": err}, status_code=500)
 
 # ============================================================
 # CHAT ENDPOINT
@@ -256,20 +250,23 @@ Page summary:
 
 @app.post("/api/chat")
 async def chat(payload: Dict):
-    session_id = payload.get("session_id")
-    message = payload.get("message")
-
-    session = SESSIONS.get(session_id)
-    if not session:
-        return JSONResponse({"error":"Session expired"}, status_code=400)
-
     try:
+        session_id = payload.get("session_id")
+        message = payload.get("message")
+
+        session = SESSIONS.get(session_id)
+        if not session:
+            return JSONResponse({"error": "Session expired/no setup"}, status_code=400)
+
         answer = generate_with_file_search(
             session["store_id"],
             session["system_prompt"],
             message
         )
-    except Exception as e:
-        return JSONResponse({"error":str(e)}, status_code=500)
 
-    return {"answer": answer}
+        return {"answer": answer}
+
+    except Exception as e:
+        import traceback
+        err = traceback.format_exc()
+        return JSONResponse({"error": str(e), "trace": err}, status_code=500)
