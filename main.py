@@ -7,114 +7,111 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-# =========================================================
+# ============================================================
 # CONFIG
-# =========================================================
+# ============================================================
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY not set")
+    raise RuntimeError("GEMINI_API_KEY must be set in env vars")
 
+# Base for Gemini REST endpoints
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
-MODEL_NAME = "models/gemini-2.5-flash"
 
-# Ephemeral in-memory session store
+# Model we will call for generation
+MODEL_NAME = "gemini-2.5-flash"
+
+# In-memory session store (for ephemeral demo)
 SESSIONS: Dict[str, Dict] = {}
 
-# =========================================================
-# GEMINI FILE SEARCH (REST HELPERS)
-# =========================================================
+# ============================================================
+# HELPER FUNCTIONS (REST Gemini File Search)
+# ============================================================
 
-def gemini_headers():
+def gemini_headers_json():
+    """
+    Headers for JSON endpoints with the API key.
+    """
     return {
-        "Authorization": f"Bearer {GEMINI_API_KEY}",
-        "Content-Type": "application/json",
+        "x-goog-api-key": GEMINI_API_KEY,
+        "Content-Type": "application/json"
     }
 
 
-def create_file_store(display_name: str) -> str:
+def create_file_search_store(display_name: str) -> str:
     """
-    Creates a Gemini File Search store.
-    Returns the store resource name.
+    Creates a File Search store and returns the store resource name.
     """
-    res = requests.post(
-        f"{GEMINI_BASE}/fileSearchStores",
-        headers=gemini_headers(),
-        json={"displayName": display_name},
-        timeout=30,
-    )
+    url = f"{GEMINI_BASE}/fileSearchStores"
+    payload = {"displayName": display_name}
+
+    res = requests.post(url, headers=gemini_headers_json(), json=payload, timeout=30)
     res.raise_for_status()
-    return res.json()["name"]
+    data = res.json()
+    return data["name"]  # This is e.g. "fileSearchStores/123abc…"
 
 
-def upload_file_to_store(store_id: str, file: UploadFile):
+def upload_and_attach_file(store_id: str, file: UploadFile):
     """
-    Uploads a file and attaches it to a file store.
+    Upload the raw file bytes to Gemini and attach it to the given store.
     """
-    data = file.file.read()
+    # Read full file bytes
+    content = file.file.read()
 
-    # 1) Upload file bytes
-    upload_res = requests.post(
-        f"{GEMINI_BASE}/files:upload",
-        headers={
-            "Authorization": f"Bearer {GEMINI_API_KEY}",
-            "X-Goog-Upload-Protocol": "raw",
-            "X-Goog-Upload-File-Name": file.filename,
-            "Content-Type": file.content_type or "application/octet-stream",
-        },
-        data=data,
-        timeout=60,
-    )
-    upload_res.raise_for_status()
-    file_name = upload_res.json()["name"]
+    # First: upload the file to Gemini
+    upload_headers = {
+        "x-goog-api-key": GEMINI_API_KEY,
+        "X-Goog-Upload-Protocol": "raw",
+        "X-Goog-Upload-File-Name": file.filename,
+        "Content-Type": file.content_type or "application/octet-stream"
+    }
 
-    # 2) Attach file to store
-    attach_res = requests.post(
-        f"{GEMINI_BASE}/{store_id}:addFile",
-        headers=gemini_headers(),
-        json={"file": file_name},
-        timeout=30,
-    )
-    attach_res.raise_for_status()
+    upload_url = f"{GEMINI_BASE}/files:upload"
+    upload_response = requests.post(upload_url, headers=upload_headers, data=content, timeout=60)
+    upload_response.raise_for_status()
+    uploaded_name = upload_response.json()["name"]  # The internal file name
+
+    # Second: attach the uploaded file to the store
+    attach_url = f"{GEMINI_BASE}/{store_id}:addFile"
+    attach_payload = {"file": uploaded_name}
+
+    attached_response = requests.post(attach_url, headers=gemini_headers_json(), json=attach_payload, timeout=30)
+    attached_response.raise_for_status()
+    return attached_response.json()
 
 
-def gemini_chat(system_prompt: str, store_id: str, user_message: str) -> str:
+def generate_with_file_search(store_id: str, system_prompt: str, user_message: str) -> str:
     """
-    Sends a chat request to Gemini using File Search.
+    Generate a Gemini response grounded with RAG using File Search.
     """
-    payload = {
-        "model": MODEL_NAME,
-        "systemInstruction": {
-            "parts": [{"text": system_prompt}]
-        },
+    gen_url = f"{GEMINI_BASE}/models/{MODEL_NAME}:generateContent"
+
+    body = {
+        "systemInstruction": {"parts": [{"text": system_prompt}]},
         "contents": [
             {
                 "role": "user",
-                "parts": [{"text": user_message}],
+                "parts": [{"text": user_message}]
             }
         ],
         "tools": [
             {
                 "file_search": {
-                    "file_store_names": [store_id]
+                    "file_search_store_names": [store_id]
                 }
             }
-        ],
+        ]
     }
 
-    res = requests.post(
-        f"{GEMINI_BASE}/models/gemini-2.5-flash:generateContent",
-        headers=gemini_headers(),
-        json=payload,
-        timeout=60,
-    )
+    res = requests.post(gen_url, headers=gemini_headers_json(), json=body, timeout=70)
     res.raise_for_status()
+    j = res.json()
+    return j["candidates"][0]["content"]["parts"][0]["text"]
 
-    return res.json()["candidates"][0]["content"]["parts"][0]["text"]
 
-# =========================================================
-# FASTAPI APP
-# =========================================================
+# ============================================================
+# FASTAPI SETUP
+# ============================================================
 
 app = FastAPI(title="Ephemeral RAG Demo")
 
@@ -125,9 +122,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# =========================================================
-# FRONTEND (SINGLE PAGE)
-# =========================================================
+# ============================================================
+# FRONTEND HTML
+# ============================================================
 
 @app.get("/", response_class=HTMLResponse)
 def index():
@@ -136,7 +133,7 @@ def index():
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>RAG Demo</title>
+<title>Ephemeral RAG Demo</title>
 <style>
 body { background:#0b0b0b; color:#fff; font-family:system-ui; }
 .container { max-width:900px; margin:40px auto; }
@@ -156,7 +153,7 @@ button { padding:12px 20px; background:#2563eb; color:#fff; border:none; cursor:
 <div id="setup">
   <input id="company" placeholder="Company name"/>
   <input id="recipient" placeholder="Recipient name"/>
-  <input id="persona" placeholder="Persona (e.g. VP Product, non-technical)"/>
+  <input id="persona" placeholder="Persona (e.g. VP Product)"/>
   <textarea id="summary" placeholder="High-level summary"></textarea>
   <input type="file" id="files" multiple/>
   <button onclick="startChat()">Start Chat</button>
@@ -181,25 +178,24 @@ async function startChat() {
 
   const res = await fetch("/api/setup", { method:"POST", body:fd });
   const data = await res.json();
-
   sessionId = data.session_id;
-  setup.style.display = "none";
-  chat.style.display = "block";
+
+  document.getElementById("setup").style.display = "none";
+  document.getElementById("chat").style.display = "block";
 }
 
 async function sendMessage() {
-  const msg = messageInput.value;
-  messageInput.value = "";
-  messages.innerHTML += `<div class="msg user">You: ${msg}</div>`;
+  const msg = document.getElementById("messageInput").value;
+  document.getElementById("messageInput").value = "";
+  document.getElementById("messages").innerHTML += `<div class="msg user">You: ${msg}</div>`;
 
   const res = await fetch("/api/chat", {
     method:"POST",
     headers:{ "Content-Type":"application/json" },
     body:JSON.stringify({ session_id:sessionId, message:msg })
   });
-  const data = await res.json();
-
-  messages.innerHTML += `<div class="msg bot">Bot: ${data.answer}</div>`;
+  const d = await res.json();
+  document.getElementById("messages").innerHTML += `<div class="msg bot">Bot: ${d.answer}</div>`;
 }
 </script>
 
@@ -208,9 +204,9 @@ async function sendMessage() {
 </html>
 """
 
-# =========================================================
+# ============================================================
 # SETUP ENDPOINT
-# =========================================================
+# ============================================================
 
 @app.post("/api/setup")
 async def setup(
@@ -220,13 +216,22 @@ async def setup(
     summary: str = Form(...),
     files: List[UploadFile] = File(...)
 ):
+    # Create a unique session
     session_id = str(uuid.uuid4())
-    store_display_name = f"demo-{session_id[:6]}"
+    store_display_name = f"demo-{session_id[:8]}"
 
-    store_id = create_file_store(store_display_name)
+    # Create the File Search store
+    try:
+        store_id = create_file_search_store(store_display_name)
+    except Exception as e:
+        return JSONResponse({"error": f"Failed to create store: {str(e)}"}, status_code=500)
 
+    # Upload & attach each document
     for f in files:
-        upload_file_to_store(store_id, f)
+        try:
+            upload_and_attach_file(store_id, f)
+        except Exception as e:
+            return JSONResponse({"error": f"Upload failed: {str(e)}"}, status_code=500)
 
     system_prompt = f"""
 You are an AI assistant helping {recipient} from {company}.
@@ -234,31 +239,37 @@ Persona: {persona}
 
 Page summary:
 {summary}
-
-Answer clearly, concisely, and in a professional business tone.
 """
 
+    # Save in memory
     SESSIONS[session_id] = {
         "store_id": store_id,
-        "system_prompt": system_prompt,
+        "system_prompt": system_prompt
     }
 
     return {"session_id": session_id}
 
-# =========================================================
+
+# ============================================================
 # CHAT ENDPOINT
-# =========================================================
+# ============================================================
 
 @app.post("/api/chat")
 async def chat(payload: Dict):
-    session = SESSIONS.get(payload.get("session_id"))
+    session_id = payload.get("session_id")
+    message = payload.get("message")
+
+    session = SESSIONS.get(session_id)
     if not session:
-        return JSONResponse({"error": "Session expired"}, status_code=400)
+        return JSONResponse({"error":"Session expired"}, status_code=400)
 
-    answer = gemini_chat(
-        system_prompt=session["system_prompt"],
-        store_id=session["store_id"],
-        user_message=payload["message"],
-    )
+    try:
+        answer = generate_with_file_search(
+            session["store_id"],
+            session["system_prompt"],
+            message
+        )
+    except Exception as e:
+        return JSONResponse({"error":str(e)}, status_code=500)
 
-    return {"answer": answer} 
+    return {"answer": answer}
