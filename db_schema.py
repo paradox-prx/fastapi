@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-import psycopg
+import psycopg2
 
 load_dotenv()
 
@@ -10,7 +10,7 @@ if not DATABASE_URL:
 
 # ---- IMPORTANT for Supabase Transaction Pooler (port 6543) ----
 # Supabase transaction mode does not support prepared statements. :contentReference[oaicite:4]{index=4}
-# psycopg prepared statements can be disabled with prepare_threshold=None. :contentReference[oaicite:5]{index=5}
+# psycopg2 does not use psycopg3's prepare_threshold behavior.
 
 DDL = r"""
 -- Extensions (UUID generation)
@@ -234,13 +234,11 @@ CREATE INDEX IF NOT EXISTS idx_job_events_job_ts ON ingestion_job_events (job_id
 """
 
 def main():
-    # Connect with prepared statements disabled (transaction pooler safe). :contentReference[oaicite:7]{index=7}
-    # Also disable statement cache to be extra safe with poolers.
-    conn = psycopg.connect(
+    # Connect in autocommit for DDL; transaction pooler safe.
+    conn = psycopg2.connect(
         DATABASE_URL,
-        autocommit=True,           # safe for DDL; avoids transaction pooling weirdness
-        prepare_threshold=None,    # disables prepared statements :contentReference[oaicite:8]{index=8}
     )
+    conn.autocommit = True
 
     try:
         with conn.cursor() as cur:

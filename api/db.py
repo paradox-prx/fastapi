@@ -2,28 +2,24 @@ import os
 from contextlib import contextmanager
 from typing import Any, Dict, Iterable, List, Optional
 
-import psycopg
-from psycopg_pool import ConnectionPool
-from psycopg.rows import dict_row
+import psycopg2
+from psycopg2 import pool
+from psycopg2.extras import RealDictCursor
 
 DB_DSN = os.getenv("SUPABASE_DB_DSN", "").strip()
 if not DB_DSN:
     raise RuntimeError("Missing SUPABASE_DB_DSN env var.")
 
-_pool: Optional[ConnectionPool] = None
+_pool: Optional[pool.SimpleConnectionPool] = None
 
 
-def get_pool() -> ConnectionPool:
+def get_pool() -> pool.SimpleConnectionPool:
     global _pool
     if _pool is None:
-        _pool = ConnectionPool(
-            conninfo=DB_DSN,
-            min_size=1,
-            max_size=5,
-            kwargs={
-                "autocommit": True,
-                "prepare_threshold": None,
-            },
+        _pool = pool.SimpleConnectionPool(
+            1,
+            5,
+            dsn=DB_DSN,
         )
     return _pool
 
@@ -31,22 +27,28 @@ def get_pool() -> ConnectionPool:
 @contextmanager
 def get_conn():
     pool = get_pool()
-    with pool.connection() as conn:
+    conn = pool.getconn()
+    try:
+        conn.autocommit = True
         yield conn
+    finally:
+        pool.putconn(conn)
 
 
 def fetch_one(sql: str, params: Iterable[Any] = ()) -> Optional[Dict[str, Any]]:
     with get_conn() as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(sql, params)
-            return cur.fetchone()
+            row = cur.fetchone()
+            return dict(row) if row else None
 
 
 def fetch_all(sql: str, params: Iterable[Any] = ()) -> List[Dict[str, Any]]:
     with get_conn() as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(sql, params)
-            return cur.fetchall()
+            rows = cur.fetchall()
+            return [dict(r) for r in rows]
 
 
 def execute(sql: str, params: Iterable[Any] = ()) -> None:
@@ -57,9 +59,9 @@ def execute(sql: str, params: Iterable[Any] = ()) -> None:
 
 def execute_returning(sql: str, params: Iterable[Any] = ()) -> Dict[str, Any]:
     with get_conn() as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(sql, params)
             row = cur.fetchone()
             if row is None:
                 raise RuntimeError("Expected row from RETURNING query.")
-            return row
+            return dict(row)
