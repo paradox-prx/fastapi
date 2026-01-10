@@ -1,4 +1,6 @@
 import os
+import re
+from urllib.parse import quote
 from typing import Dict, Optional, Tuple
 
 import requests
@@ -26,7 +28,8 @@ def _headers(extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
 
 
 def upload_bytes(storage_path: str, content: bytes, mime_type: str) -> None:
-    url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_STORAGE_BUCKET}/{storage_path}"
+    safe_path = quote(storage_path, safe="/")
+    url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_STORAGE_BUCKET}/{safe_path}"
     resp = _HTTP.put(
         url,
         headers=_headers({"Content-Type": mime_type}),
@@ -38,7 +41,8 @@ def upload_bytes(storage_path: str, content: bytes, mime_type: str) -> None:
 
 
 def download_bytes(storage_path: str) -> bytes:
-    url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_STORAGE_BUCKET}/{storage_path}"
+    safe_path = quote(storage_path, safe="/")
+    url = f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_STORAGE_BUCKET}/{safe_path}"
     resp = _HTTP.get(url, headers=_headers(), timeout=60)
     if resp.status_code >= 400:
         raise RuntimeError(f"Supabase download failed: {resp.status_code} {resp.text}")
@@ -46,7 +50,8 @@ def download_bytes(storage_path: str) -> bytes:
 
 
 def create_signed_url(storage_path: str, expires_in: int = 3600) -> str:
-    url = f"{SUPABASE_URL}/storage/v1/object/sign/{SUPABASE_STORAGE_BUCKET}/{storage_path}"
+    safe_path = quote(storage_path, safe="/")
+    url = f"{SUPABASE_URL}/storage/v1/object/sign/{SUPABASE_STORAGE_BUCKET}/{safe_path}"
     resp = _HTTP.post(
         url,
         headers=_headers({"Content-Type": "application/json"}),
@@ -63,5 +68,8 @@ def create_signed_url(storage_path: str, expires_in: int = 3600) -> str:
 
 
 def storage_path_for_document(doc_id: str, filename: str) -> str:
-    safe_name = filename.replace("\\", "_").replace("/", "_")
-    return f"{doc_id}/{safe_name}"
+    base = filename.strip()
+    base = re.sub(r"\s+", "-", base)
+    base = re.sub(r"[^A-Za-z0-9._-]", "", base)
+    base = base.strip("._-") or "document"
+    return f"{doc_id}/{base}"

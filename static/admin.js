@@ -128,6 +128,14 @@
       setError("");
       const storeId = storeSelect.value;
       const docIds = Array.from(docsSelect.selectedOptions).map((o) => o.value);
+      if (!storeId) {
+        setError("Select a file store.");
+        return;
+      }
+      if (!docIds.length) {
+        setError("Select at least one document to attach.");
+        return;
+      }
       const payload = {
         document_ids: docIds,
         create_ingestion_job: document.getElementById("createJob").checked,
@@ -156,6 +164,7 @@
     const pageStoresSelect = document.getElementById("pageStoresSelect");
     const displayDocsList = document.getElementById("displayDocsList");
     const pagesList = document.getElementById("pagesList");
+    const systemPrompt = document.getElementById("systemPrompt");
 
     async function refreshRecipientsList() {
       const data = await adminFetch("/v1/admin/recipients");
@@ -220,6 +229,10 @@
         let recipientId = recipientSelect.value;
         const newName = pageForm.recipient_name.value.trim();
         if (newName) {
+          if (!pageForm.recipient_email.value.trim() || !pageForm.recipient_company.value.trim()) {
+            setError("Recipient email and company name are required.");
+            return;
+          }
           const newRecipient = await adminFetch("/v1/admin/recipients", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -231,6 +244,10 @@
             }),
           });
           recipientId = newRecipient.id;
+        }
+        if (!recipientId) {
+          setError("Select an existing recipient or create a new one.");
+          return;
         }
 
         const displayDocs = [];
@@ -279,6 +296,19 @@
     await refreshStoresList();
     await refreshDocsList();
     await refreshPagesList();
+
+    pageForm.querySelectorAll("[data-placeholder]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!systemPrompt) return;
+        const token = btn.dataset.placeholder || "";
+        const start = systemPrompt.selectionStart || 0;
+        const end = systemPrompt.selectionEnd || 0;
+        const value = systemPrompt.value || "";
+        systemPrompt.value = value.slice(0, start) + token + value.slice(end);
+        systemPrompt.focus();
+        systemPrompt.selectionStart = systemPrompt.selectionEnd = start + token.length;
+      });
+    });
   }
 
   async function initJobs() {
@@ -369,12 +399,172 @@
     await refreshJobsList();
   }
 
+  async function initAnalytics() {
+    const daysSelect = document.getElementById("daysSelect");
+    const refreshBtn = document.getElementById("refreshAnalytics");
+    const topPages = document.getElementById("topPages");
+    const topChatPages = document.getElementById("topChatPages");
+    const statEvents = document.getElementById("statEvents");
+    const statSessions = document.getElementById("statSessions");
+    const statMessages = document.getElementById("statMessages");
+    let chartDay = null;
+    let chartType = null;
+    let chartSessions = null;
+    let chartMessages = null;
+
+    function destroyCharts() {
+      if (chartDay) {
+        chartDay.destroy();
+        chartDay = null;
+      }
+      if (chartType) {
+        chartType.destroy();
+        chartType = null;
+      }
+      if (chartSessions) {
+        chartSessions.destroy();
+        chartSessions = null;
+      }
+      if (chartMessages) {
+        chartMessages.destroy();
+        chartMessages = null;
+      }
+    }
+
+    function renderTopPages(rows) {
+      topPages.innerHTML = "";
+      rows.forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "list-row";
+        item.innerHTML = `<strong>${row.title}</strong><div class="muted">/p/${row.slug} • ${row.count} events</div>`;
+        topPages.appendChild(item);
+      });
+    }
+
+    function renderTopChatPages(rows) {
+      topChatPages.innerHTML = "";
+      rows.forEach((row) => {
+        const item = document.createElement("div");
+        item.className = "list-row";
+        item.innerHTML = `<strong>${row.title}</strong><div class="muted">/p/${row.slug} • ${row.count} sessions</div>`;
+        topChatPages.appendChild(item);
+      });
+    }
+
+    async function refresh() {
+      setError("");
+      destroyCharts();
+      const days = parseInt(daysSelect.value, 10);
+      const data = await adminFetch(`/v1/admin/analytics/summary?days=${days}`);
+
+      const dayLabels = (data.by_day || []).map((r) => new Date(r.day).toLocaleDateString());
+      const dayCounts = (data.by_day || []).map((r) => r.count);
+      const typeLabels = (data.by_type || []).map((r) => r.event_type);
+      const typeCounts = (data.by_type || []).map((r) => r.count);
+      const sessionLabels = (data.chat_sessions_by_day || []).map((r) => new Date(r.day).toLocaleDateString());
+      const sessionCounts = (data.chat_sessions_by_day || []).map((r) => r.count);
+      const messageLabels = (data.chat_messages_by_day || []).map((r) => new Date(r.day).toLocaleDateString());
+      const messageCounts = (data.chat_messages_by_day || []).map((r) => r.count);
+      const totals = data.totals || {};
+
+      if (statEvents) statEvents.textContent = totals.events || 0;
+      if (statSessions) statSessions.textContent = totals.sessions || 0;
+      if (statMessages) statMessages.textContent = totals.messages || 0;
+
+      const dayCtx = document.getElementById("eventsByDay");
+      const typeCtx = document.getElementById("eventsByType");
+      const sessionsCtx = document.getElementById("chatSessionsByDay");
+      const messagesCtx = document.getElementById("chatMessagesByDay");
+      if (window.Chart && dayCtx) {
+        chartDay = new Chart(dayCtx, {
+          type: "line",
+          data: {
+            labels: dayLabels,
+            datasets: [
+              {
+                label: "Events",
+                data: dayCounts,
+                borderColor: "#b5762b",
+                backgroundColor: "rgba(181, 118, 43, 0.2)",
+                tension: 0.2,
+              },
+            ],
+          },
+          options: { responsive: true },
+        });
+      }
+      if (window.Chart && typeCtx) {
+        chartType = new Chart(typeCtx, {
+          type: "bar",
+          data: {
+            labels: typeLabels,
+            datasets: [
+              {
+                label: "Count",
+                data: typeCounts,
+                backgroundColor: "#8b7d6b",
+              },
+            ],
+          },
+          options: { responsive: true },
+        });
+      }
+      if (window.Chart && sessionsCtx) {
+        chartSessions = new Chart(sessionsCtx, {
+          type: "line",
+          data: {
+            labels: sessionLabels,
+            datasets: [
+              {
+                label: "Chat sessions",
+                data: sessionCounts,
+                borderColor: "#5c3b1e",
+                backgroundColor: "rgba(92, 59, 30, 0.2)",
+                tension: 0.2,
+              },
+            ],
+          },
+          options: { responsive: true },
+        });
+      }
+      if (window.Chart && messagesCtx) {
+        chartMessages = new Chart(messagesCtx, {
+          type: "line",
+          data: {
+            labels: messageLabels,
+            datasets: [
+              {
+                label: "Chat messages",
+                data: messageCounts,
+                borderColor: "#1f5b3a",
+                backgroundColor: "rgba(31, 91, 58, 0.2)",
+                tension: 0.2,
+              },
+            ],
+          },
+          options: { responsive: true },
+        });
+      }
+      renderTopPages(data.by_page || []);
+      renderTopChatPages(data.top_chat_pages || []);
+    }
+
+    refreshBtn.addEventListener("click", () => {
+      refresh().catch((err) => setError(String(err)));
+    });
+    daysSelect.addEventListener("change", () => {
+      refresh().catch((err) => setError(String(err)));
+    });
+    await refresh();
+  }
+
   async function init() {
     try {
       if (page === "documents") await initDocuments();
       if (page === "file-stores") await initFileStores();
       if (page === "pages") await initPages();
       if (page === "jobs") await initJobs();
+      if (page === "analytics") await initAnalytics();
     } catch (err) {
       setError(String(err));
     }

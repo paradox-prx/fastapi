@@ -96,6 +96,19 @@ def _signed_url_for_doc(doc: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _detect_file_type(filename: Optional[str], mime_type: Optional[str]) -> str:
+    name = (filename or "").lower()
+    mime = (mime_type or "").lower()
+    if name.endswith(".pdf") or mime == "application/pdf":
+        return "pdf"
+    if name.endswith(".md") or name.endswith(".markdown") or mime in (
+        "text/markdown",
+        "text/plain",
+    ):
+        return "md"
+    raise HTTPException(status_code=400, detail="Only .pdf and .md files are supported")
+
+
 @app.get("/favicon.ico")
 def favicon():
     return Response(status_code=204)
@@ -129,6 +142,11 @@ def admin_pages(request: Request):
 @app.get("/admin/jobs", response_class=HTMLResponse)
 def admin_jobs(request: Request):
     return templates.TemplateResponse("admin_jobs.html", {"request": request})
+
+
+@app.get("/admin/analytics", response_class=HTMLResponse)
+def admin_analytics(request: Request):
+    return templates.TemplateResponse("admin_analytics.html", {"request": request})
 
 
 @app.get("/v1/pages/{slug}")
@@ -334,6 +352,7 @@ async def create_document(
 
     doc_id = str(uuid.uuid4())
     source_type = "storage"
+    file_type = None
     storage_path = None
     original_filename = None
     sha256 = None
@@ -341,11 +360,16 @@ async def create_document(
 
     if external_url:
         source_type = "external_url"
-        mime_type = mime_type or "application/octet-stream"
+        file_type = _detect_file_type(external_url, mime_type)
+        if not mime_type:
+            mime_type = "application/pdf" if file_type == "pdf" else "text/plain"
     elif file is not None:
         content = await file.read()
         original_filename = file.filename
         mime_type = file.content_type or mime_type or "application/octet-stream"
+        file_type = _detect_file_type(original_filename, mime_type)
+        if file_type == "md" and mime_type == "application/octet-stream":
+            mime_type = "text/plain"
         sha256 = hashlib.sha256(content).hexdigest()
         size_bytes = len(content)
         storage_path = storage.storage_path_for_document(str(doc_id), original_filename or "document")
@@ -356,14 +380,15 @@ async def create_document(
     db.execute(
         """
         INSERT INTO documents (
-            id, source_type, mime_type, original_filename, storage_bucket, storage_path,
+            id, source_type, file_type, mime_type, original_filename, storage_bucket, storage_path,
             external_url, title, internal_description, sha256, size_bytes
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             doc_id,
             source_type,
+            file_type,
             mime_type,
             original_filename,
             storage.SUPABASE_STORAGE_BUCKET,
@@ -382,7 +407,7 @@ async def create_document(
 def list_documents():
     rows = db.fetch_all(
         """
-        SELECT id, title, source_type, mime_type, original_filename,
+        SELECT id, title, source_type, file_type, mime_type, original_filename,
                storage_path, external_url, created_at
         FROM documents
         ORDER BY created_at DESC
@@ -456,6 +481,9 @@ def attach_documents(file_store_id: str, payload: Dict[str, Any] = Body(...)):
 
 @app.post("/v1/admin/pages", dependencies=[Depends(require_admin)])
 def create_page(payload: Dict[str, Any] = Body(...)):
+    recipient_id = (payload.get("recipient_id") or "").strip()
+    if not recipient_id:
+        raise HTTPException(status_code=400, detail="Missing recipient_id")
     slug = payload.get("slug") or _generate_slug()
     row = db.execute_returning(
         """
@@ -467,7 +495,7 @@ def create_page(payload: Dict[str, Any] = Body(...)):
         (
             slug,
             payload["title"],
-            payload["recipient_id"],
+            recipient_id,
             payload["template_key"],
             payload["system_prompt_template"],
             payload.get("summary_markdown"),
@@ -578,6 +606,93 @@ def list_ingestion_jobs():
         """
     )
     return {"jobs": rows}
+
+
+@app.get("/v1/admin/analytics/summary", dependencies=[Depends(require_admin)])
+def analytics_summary(days: int = 30):
+    days = max(1, min(days, 365))
+    by_day = db.fetch_all(
+        """
+        SELECT date_trunc('day', created_at) AS day, COUNT(*) AS count
+        FROM analytics_events
+        WHERE created_at >= now() - (%s || ' days')::interval
+        GROUP BY day
+        ORDER BY day ASC
+        """,
+        (days,),
+    )
+    by_type = db.fetch_all(
+        """
+        SELECT event_type, COUNT(*) AS count
+        FROM analytics_events
+        WHERE created_at >= now() - (%s || ' days')::interval
+        GROUP BY event_type
+        ORDER BY count DESC
+        """,
+        (days,),
+    )
+    by_page = db.fetch_all(
+        """
+        SELECT p.slug, p.title, COUNT(*) AS count
+        FROM analytics_events ae
+        JOIN pages p ON p.id = ae.page_id
+        WHERE ae.created_at >= now() - (%s || ' days')::interval
+        GROUP BY p.slug, p.title
+        ORDER BY count DESC
+        LIMIT 10
+        """,
+        (days,),
+    )
+    chat_sessions_by_day = db.fetch_all(
+        """
+        SELECT date_trunc('day', created_at) AS day, COUNT(*) AS count
+        FROM chat_sessions
+        WHERE created_at >= now() - (%s || ' days')::interval
+        GROUP BY day
+        ORDER BY day ASC
+        """,
+        (days,),
+    )
+    chat_messages_by_day = db.fetch_all(
+        """
+        SELECT date_trunc('day', created_at) AS day, COUNT(*) AS count
+        FROM chat_messages
+        WHERE created_at >= now() - (%s || ' days')::interval
+        GROUP BY day
+        ORDER BY day ASC
+        """,
+        (days,),
+    )
+    top_chat_pages = db.fetch_all(
+        """
+        SELECT p.slug, p.title, COUNT(*) AS count
+        FROM chat_sessions cs
+        JOIN pages p ON p.id = cs.page_id
+        WHERE cs.created_at >= now() - (%s || ' days')::interval
+        GROUP BY p.slug, p.title
+        ORDER BY count DESC
+        LIMIT 10
+        """,
+        (days,),
+    )
+    totals = db.fetch_one(
+        """
+        SELECT
+          (SELECT COUNT(*) FROM analytics_events WHERE created_at >= now() - (%s || ' days')::interval) AS events,
+          (SELECT COUNT(*) FROM chat_sessions WHERE created_at >= now() - (%s || ' days')::interval) AS sessions,
+          (SELECT COUNT(*) FROM chat_messages WHERE created_at >= now() - (%s || ' days')::interval) AS messages
+        """,
+        (days, days, days),
+    )
+    return {
+        "by_day": by_day,
+        "by_type": by_type,
+        "by_page": by_page,
+        "chat_sessions_by_day": chat_sessions_by_day,
+        "chat_messages_by_day": chat_messages_by_day,
+        "top_chat_pages": top_chat_pages,
+        "totals": totals or {"events": 0, "sessions": 0, "messages": 0},
+    }
 
 
 @app.get("/v1/admin/ingestion-jobs/{job_id}/events", dependencies=[Depends(require_admin)])

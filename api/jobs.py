@@ -62,6 +62,22 @@ def _download_document_bytes(doc: Dict[str, Any]) -> bytes:
     return storage.download_bytes(storage_path)
 
 
+def _gemini_file_meta(doc: Dict[str, Any]) -> Dict[str, str]:
+    file_type = (doc.get("file_type") or "").lower()
+    mime_type = (doc.get("mime_type") or "application/octet-stream").lower()
+    name = doc.get("original_filename") or doc.get("title") or "document"
+    if file_type == "pdf":
+        mime_type = "application/pdf"
+        if not name.lower().endswith(".pdf"):
+            name = f"{name}.pdf"
+    elif file_type == "md":
+        if mime_type not in ("text/plain", "text/markdown"):
+            mime_type = "text/plain"
+        if not name.lower().endswith((".md", ".markdown")):
+            name = f"{name}.md"
+    return {"mime_type": mime_type, "display_name": name}
+
+
 def run_ingestion_job(job_id: str, time_budget_s: int = 20, batch_size: int = 5) -> Dict[str, Any]:
     job = db.fetch_one("SELECT * FROM ingestion_jobs WHERE id = %s", (job_id,))
     if not job:
@@ -109,11 +125,8 @@ def run_ingestion_job(job_id: str, time_budget_s: int = 20, batch_size: int = 5)
                 _log_event(job_id, "downloading_from_storage", data={"document_id": doc["id"]})
                 content = _download_document_bytes(doc)
                 _log_event(job_id, "uploading_to_gemini_files_api", data={"document_id": doc["id"]})
-                file_name = gemini_fs.resumable_upload_file(
-                    content,
-                    doc["mime_type"],
-                    doc.get("title") or doc.get("original_filename") or "document",
-                )
+                meta = _gemini_file_meta(doc)
+                file_name = gemini_fs.resumable_upload_file(content, meta["mime_type"], meta["display_name"])
                 _log_event(job_id, "importing_into_file_search_store", data={"document_id": doc["id"]})
                 op_name = gemini_fs.import_file_into_store(
                     file_store["gemini_store_name"],

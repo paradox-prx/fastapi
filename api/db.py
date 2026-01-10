@@ -4,7 +4,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import psycopg2
 from psycopg2 import pool
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import Json, RealDictCursor
 
 DB_DSN = os.getenv("SUPABASE_DB_DSN", "").strip()
 if not DB_DSN:
@@ -35,10 +35,20 @@ def get_conn():
         pool.putconn(conn)
 
 
+def _adapt_params(params: Iterable[Any]) -> tuple:
+    adapted = []
+    for value in params:
+        if isinstance(value, (dict, list)):
+            adapted.append(Json(value))
+        else:
+            adapted.append(value)
+    return tuple(adapted)
+
+
 def fetch_one(sql: str, params: Iterable[Any] = ()) -> Optional[Dict[str, Any]]:
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(sql, params)
+            cur.execute(sql, _adapt_params(params))
             row = cur.fetchone()
             return dict(row) if row else None
 
@@ -46,7 +56,7 @@ def fetch_one(sql: str, params: Iterable[Any] = ()) -> Optional[Dict[str, Any]]:
 def fetch_all(sql: str, params: Iterable[Any] = ()) -> List[Dict[str, Any]]:
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(sql, params)
+            cur.execute(sql, _adapt_params(params))
             rows = cur.fetchall()
             return [dict(r) for r in rows]
 
@@ -54,13 +64,13 @@ def fetch_all(sql: str, params: Iterable[Any] = ()) -> List[Dict[str, Any]]:
 def execute(sql: str, params: Iterable[Any] = ()) -> None:
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql, params)
+            cur.execute(sql, _adapt_params(params))
 
 
 def execute_returning(sql: str, params: Iterable[Any] = ()) -> Dict[str, Any]:
     with get_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(sql, params)
+            cur.execute(sql, _adapt_params(params))
             row = cur.fetchone()
             if row is None:
                 raise RuntimeError("Expected row from RETURNING query.")

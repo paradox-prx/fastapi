@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel" data-page="analytics">
+  <h1>Analytics</h1>
+  <div id="errorPanel" class="error"></div>
+  <div class="row">
+    <label for="daysSelect">Range</label>
+    <select id="daysSelect" class="input">
+      <option value="7">Last 7 days</option>
+      <option value="30" selected>Last 30 days</option>
+      <option value="90">Last 90 days</option>
+      <option value="180">Last 180 days</option>
+      <option value="365">Last 365 days</option>
+    </select>
+    <button id="refreshAnalytics" class="button secondary" type="button">Refresh</button>
+  </div>
+
+  <div class="grid analytics-grid">
+    <div class="panel stat-card">
+      <div class="stat-label">Events</div>
+      <div id="statEvents" class="stat-value">0</div>
+    </div>
+    <div class="panel stat-card">
+      <div class="stat-label">Chat sessions</div>
+      <div id="statSessions" class="stat-value">0</div>
+    </div>
+    <div class="panel stat-card">
+      <div class="stat-label">Chat messages</div>
+      <div id="statMessages" class="stat-value">0</div>
+    </div>
+  </div>
+
+  <div class="grid analytics-grid">
+    <div class="panel">
+      <h2>Events over time</h2>
+      <canvas id="eventsByDay"></canvas>
+    </div>
+    <div class="panel">
+      <h2>Event types</h2>
+      <canvas id="eventsByType"></canvas>
+    </div>
+    <div class="panel">
+      <h2>Chat sessions over time</h2>
+      <canvas id="chatSessionsByDay"></canvas>
+    </div>
+    <div class="panel">
+      <h2>Chat messages over time</h2>
+      <canvas id="chatMessagesByDay"></canvas>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Top pages</h2>
+    <div id="topPages" class="list"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Top chat pages</h2>
+    <div id="topChatPages" class="list"></div>
+  </div>
+</section>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="/static/admin.js"></script>
+{% endblock %}

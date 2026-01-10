@@ -50,6 +50,29 @@ a {
   margin: 8px 0;
 }
 
+.label-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  border: 1px dashed #b5762b;
+  background: #fff7e8;
+  color: #5b4a33;
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
 .input {
   width: 100%;
   padding: 10px;
@@ -75,6 +98,28 @@ a {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
+}
+
+.analytics-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.stat-card {
+  text-align: center;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #6b5f4a;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: bold;
+  margin-top: 6px;
+  color: #5c3b1e;
 }
 
 .card {

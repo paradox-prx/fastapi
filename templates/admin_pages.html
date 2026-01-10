@@ -13,18 +13,30 @@
       <button id="refreshRecipients" class="button secondary" type="button">Refresh Recipients</button>
     </div>
 
-    <details>
-      <summary>Create new recipient</summary>
+    <div class="panel">
+      <h3>Create new recipient (optional)</h3>
       <input class="input" name="recipient_name" placeholder="Recipient name" />
-      <input class="input" name="recipient_email" placeholder="Recipient email" />
+      <input class="input" name="recipient_email" type="email" placeholder="Recipient email" />
       <input class="input" name="recipient_company" placeholder="Company name" />
       <input class="input" name="recipient_persona" placeholder="Persona" />
-    </details>
+    </div>
 
     <select id="templateKey" name="template_key" class="input">
       <option value="lovable-default">lovable-default</option>
     </select>
-    <textarea class="input" name="system_prompt_template" rows="6" placeholder="System prompt template" required></textarea>
+    <div class="label-row">
+      <label for="systemPrompt">System prompt template</label>
+      <div class="chip-row">
+        <button class="chip" type="button" data-placeholder="{{ '{{page.title}}' }}">page.title</button>
+        <button class="chip" type="button" data-placeholder="{{ '{{page.summary_markdown}}' }}">page.summary</button>
+        <button class="chip" type="button" data-placeholder="{{ '{{page.details_markdown}}' }}">page.details</button>
+        <button class="chip" type="button" data-placeholder="{{ '{{recipient.name}}' }}">recipient.name</button>
+        <button class="chip" type="button" data-placeholder="{{ '{{recipient.company_name}}' }}">recipient.company</button>
+        <button class="chip" type="button" data-placeholder="{{ '{{recipient.persona}}' }}">recipient.persona</button>
+        <button class="chip" type="button" data-placeholder="{{ '{{documents_display_list}}' }}">documents list</button>
+      </div>
+    </div>
+    <textarea id="systemPrompt" class="input" name="system_prompt_template" rows="6" placeholder="System prompt template" required></textarea>
     <textarea class="input" name="summary_markdown" rows="4" placeholder="Summary markdown"></textarea>
     <textarea class="input" name="details_markdown" rows="4" placeholder="Details markdown"></textarea>
 
