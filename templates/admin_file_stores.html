@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel" data-page="file-stores">
+  <h1>File Stores</h1>
+  <div id="errorPanel" class="error"></div>
+  <form id="storeForm" class="form">
+    <input class="input" name="name" placeholder="Store name" required />
+    <input class="input" name="description" placeholder="Description" />
+    <button class="button" type="submit">Create Store</button>
+  </form>
+
+  <h2>Attach Documents</h2>
+  <form id="attachForm" class="form">
+    <select id="storeSelect" class="input"></select>
+    <select id="docsSelect" class="input" multiple></select>
+    <label class="row">
+      <input type="checkbox" id="createJob" />
+      <span>Create ingestion job</span>
+    </label>
+    <button class="button" type="submit">Attach</button>
+  </form>
+
+  <h2>Stores</h2>
+  <div id="storesList" class="list"></div>
+</section>
+<script src="/static/admin.js"></script>
+{% endblock %}

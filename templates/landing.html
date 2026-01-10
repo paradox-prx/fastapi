@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h1>Backend is live</h1>
+  <p>Use a secret slug to open a public page.</p>
+  <div class="row">
+    <input id="slugInput" class="input" placeholder="Enter slug" />
+    <button id="goSlug" class="button">Open</button>
+  </div>
+  <p class="muted">Admin console: <a href="/admin">/admin</a></p>
+</section>
+<script>
+  const go = document.getElementById("goSlug");
+  go.addEventListener("click", () => {
+    const slug = document.getElementById("slugInput").value.trim();
+    if (!slug) return;
+    window.location.href = `/p/${encodeURIComponent(slug)}`;
+  });
+</script>
+{% endblock %}

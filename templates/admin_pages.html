@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel" data-page="pages">
+  <h1>Pages</h1>
+  <div id="errorPanel" class="error"></div>
+
+  <form id="pageForm" class="form">
+    <input class="input" name="slug" placeholder="Slug (leave blank to auto-generate)" />
+    <input class="input" name="title" placeholder="Title" required />
+
+    <div class="row">
+      <select id="recipientSelect" class="input"></select>
+      <button id="refreshRecipients" class="button secondary" type="button">Refresh Recipients</button>
+    </div>
+
+    <details>
+      <summary>Create new recipient</summary>
+      <input class="input" name="recipient_name" placeholder="Recipient name" />
+      <input class="input" name="recipient_email" placeholder="Recipient email" />
+      <input class="input" name="recipient_company" placeholder="Company name" />
+      <input class="input" name="recipient_persona" placeholder="Persona" />
+    </details>
+
+    <select id="templateKey" name="template_key" class="input">
+      <option value="lovable-default">lovable-default</option>
+    </select>
+    <textarea class="input" name="system_prompt_template" rows="6" placeholder="System prompt template" required></textarea>
+    <textarea class="input" name="summary_markdown" rows="4" placeholder="Summary markdown"></textarea>
+    <textarea class="input" name="details_markdown" rows="4" placeholder="Details markdown"></textarea>
+
+    <h3>File Stores</h3>
+    <select id="pageStoresSelect" class="input" multiple></select>
+
+    <h3>Displayed Documents</h3>
+    <div id="displayDocsList" class="list"></div>
+
+    <button class="button" type="submit">Create Page</button>
+  </form>
+
+  <h2>Existing Pages</h2>
+  <div id="pagesList" class="list"></div>
+</section>
+<script src="/static/admin.js"></script>
+{% endblock %}

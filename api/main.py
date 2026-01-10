@@ -6,8 +6,10 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from fastapi import Body, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 
 from . import db
 from . import gemini_fs
@@ -26,6 +28,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
 
 def require_admin(x_admin_key: str = Header(..., alias="X-Admin-Key")) -> None:
@@ -91,6 +96,41 @@ def _signed_url_for_doc(doc: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+@app.get("/favicon.ico")
+def favicon():
+    return Response(status_code=204)
+
+
+@app.get("/", response_class=HTMLResponse)
+def landing(request: Request):
+    return templates.TemplateResponse("landing.html", {"request": request})
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_root(request: Request):
+    return templates.TemplateResponse("admin_dashboard.html", {"request": request})
+
+
+@app.get("/admin/documents", response_class=HTMLResponse)
+def admin_documents(request: Request):
+    return templates.TemplateResponse("admin_documents.html", {"request": request})
+
+
+@app.get("/admin/file-stores", response_class=HTMLResponse)
+def admin_file_stores(request: Request):
+    return templates.TemplateResponse("admin_file_stores.html", {"request": request})
+
+
+@app.get("/admin/pages", response_class=HTMLResponse)
+def admin_pages(request: Request):
+    return templates.TemplateResponse("admin_pages.html", {"request": request})
+
+
+@app.get("/admin/jobs", response_class=HTMLResponse)
+def admin_jobs(request: Request):
+    return templates.TemplateResponse("admin_jobs.html", {"request": request})
+
+
 @app.get("/v1/pages/{slug}")
 def get_page(slug: str):
     page = _page_by_slug(slug)
@@ -119,9 +159,9 @@ def get_page(slug: str):
     }
 
 
-@app.get("/p/{slug}")
-def public_page_proxy(slug: str):
-    return get_page(slug)
+@app.get("/p/{slug}", response_class=HTMLResponse)
+def public_page(slug: str, request: Request):
+    return templates.TemplateResponse("public_page.html", {"request": request, "slug": slug})
 
 
 @app.post("/v1/pages/{slug}/events/open")
@@ -260,6 +300,18 @@ def create_recipient(payload: Dict[str, Any] = Body(...)):
     return {"id": row["id"]}
 
 
+@app.get("/v1/admin/recipients", dependencies=[Depends(require_admin)])
+def list_recipients():
+    rows = db.fetch_all(
+        """
+        SELECT id, name, email, company_name, persona, created_at
+        FROM recipients
+        ORDER BY created_at DESC
+        """
+    )
+    return {"recipients": rows}
+
+
 @app.post("/v1/admin/documents", dependencies=[Depends(require_admin)])
 async def create_document(
     request: Request,
@@ -326,6 +378,19 @@ async def create_document(
     return {"id": doc_id, "storage_path": storage_path}
 
 
+@app.get("/v1/admin/documents", dependencies=[Depends(require_admin)])
+def list_documents():
+    rows = db.fetch_all(
+        """
+        SELECT id, title, source_type, mime_type, original_filename,
+               storage_path, external_url, created_at
+        FROM documents
+        ORDER BY created_at DESC
+        """
+    )
+    return {"documents": rows}
+
+
 @app.post("/v1/admin/file-stores", dependencies=[Depends(require_admin)])
 def create_file_store(payload: Dict[str, Any] = Body(...)):
     store_name = gemini_fs.create_file_search_store(payload["name"])
@@ -343,6 +408,18 @@ def create_file_store(payload: Dict[str, Any] = Body(...)):
         ),
     )
     return {"id": row["id"], "gemini_store_name": row["gemini_store_name"]}
+
+
+@app.get("/v1/admin/file-stores", dependencies=[Depends(require_admin)])
+def list_file_stores():
+    rows = db.fetch_all(
+        """
+        SELECT id, name, description, gemini_store_name, created_at
+        FROM file_stores
+        ORDER BY created_at DESC
+        """
+    )
+    return {"file_stores": rows}
 
 
 @app.post("/v1/admin/file-stores/{file_store_id}/documents", dependencies=[Depends(require_admin)])
@@ -428,6 +505,20 @@ def create_page(payload: Dict[str, Any] = Body(...)):
     return {"id": row["id"], "slug": row["slug"], "public_url": public_url}
 
 
+@app.get("/v1/admin/pages", dependencies=[Depends(require_admin)])
+def list_pages():
+    rows = db.fetch_all(
+        """
+        SELECT p.id, p.slug, p.title, p.template_key, p.is_active, p.created_at,
+               r.name AS recipient_name, r.company_name
+        FROM pages p
+        JOIN recipients r ON r.id = p.recipient_id
+        ORDER BY p.created_at DESC
+        """
+    )
+    return {"pages": rows}
+
+
 @app.post("/v1/admin/pages/{page_id}/takedown", dependencies=[Depends(require_admin)])
 def takedown_page(page_id: str):
     db.execute(
@@ -475,6 +566,18 @@ def get_ingestion_job(job_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Job not found")
     return row
+
+
+@app.get("/v1/admin/ingestion-jobs", dependencies=[Depends(require_admin)])
+def list_ingestion_jobs():
+    rows = db.fetch_all(
+        """
+        SELECT id, job_type, status, file_store_id, progress, total, error, created_at, updated_at
+        FROM ingestion_jobs
+        ORDER BY created_at DESC
+        """
+    )
+    return {"jobs": rows}
 
 
 @app.get("/v1/admin/ingestion-jobs/{job_id}/events", dependencies=[Depends(require_admin)])

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel" data-page="documents">
+  <h1>Documents</h1>
+  <div id="errorPanel" class="error"></div>
+  <form id="docForm" class="form">
+    <input class="input" name="title" placeholder="Title" required />
+    <input class="input" name="internal_description" placeholder="Internal description" />
+    <input class="input" type="file" name="file" />
+    <button class="button" type="submit">Upload</button>
+  </form>
+  <h2>Existing</h2>
+  <div id="documentsList" class="list"></div>
+</section>
+<script src="/static/admin.js"></script>
+{% endblock %}

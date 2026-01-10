@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="publicPage" data-slug="{{ slug }}">
+  <section class="panel">
+    <h1 id="pageTitle">Loading...</h1>
+    <div id="recipientInfo" class="muted"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Summary</h2>
+    <div id="pageSummary" class="markdown"></div>
+    <h2>Details</h2>
+    <div id="pageDetails" class="markdown"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Documents</h2>
+    <div id="docList" class="list"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Chat</h2>
+    <div id="chatLog" class="chat"></div>
+    <div class="row">
+      <input id="chatInput" class="input" placeholder="Ask a question..." />
+      <button id="chatSend" class="button">Send</button>
+    </div>
+    <div id="chatError" class="error"></div>
+  </section>
+</div>
+<script src="/static/public.js"></script>
+{% endblock %}

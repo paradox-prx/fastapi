@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel" data-page="jobs">
+  <h1>Ingestion Jobs</h1>
+  <div id="errorPanel" class="error"></div>
+  <div class="row">
+    <input id="jobIdInput" class="input" placeholder="Job ID (optional)" />
+    <button id="loadJob" class="button secondary" type="button">Load Job</button>
+  </div>
+
+  <div id="jobStatus" class="panel"></div>
+  <button id="runJob" class="button" type="button">Run next batch</button>
+
+  <h2>Events</h2>
+  <div id="jobEvents" class="list"></div>
+
+  <h2>All Jobs</h2>
+  <div id="jobsList" class="list"></div>
+</section>
+<script src="/static/admin.js"></script>
+{% endblock %}
